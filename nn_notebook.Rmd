@@ -1,0 +1,910 @@
+---
+title: "Densely connected neural network"
+author: "Kasper Dupont Toft Braun"
+date: "27-04-2022"
+output:
+  html_document:
+    df_print: paged
+    code_download: yes
+    code_folding: show
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+#setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+getwd()
+# Set global knitr chunk options
+knitr::opts_chunk$set(
+  fig.align = "center", 
+  cache = TRUE,
+  error = FALSE,
+  message = FALSE, 
+  warning = FALSE, 
+  collapse = TRUE 
+)
+
+# Use a clean black and white ggplot2 theme
+library(tidyverse)
+thm <- theme_bw()
+theme_set(thm)
+```
+
+This notebook contains the script we've used for finding the most optimal neural network in terms of validation accuracy. This notebook calls multiple R scripts in order to test different combinations of hyperparameters
+
+# Setup
+
+
+```{r}
+#### tfruns ####
+library(keras)
+library(tfruns)
+library(tidyverse)
+rm(list = ls())
+setwd("C:/Users/kaspe/OneDrive - Aarhus Universitet/Skrivebord/BI/2. semester/Data science project/Data science project/Modeling/Neural Network/")
+
+
+```
+
+# Evaluation protocol
+
+At first, I compared six models created by respectively k-fold cross validation and hold out validation to choose the best validation approach. I compared models with three hidden layers, where the first layer contained 128 neurons and the next two layers contained either 128, 64, or 32 neurons (1*3).
+
+## Hold out validation
+
+I start by checking the performance of hold out validation procedure.
+
+```{r}
+tp <- list(
+  layers = c(3),
+  units1 = c(128),
+  units2 = c(128, 64, 32),
+  batch_size = c(50),
+  learning_rate = c(0.01),
+  dropout = c(0),
+  weight_decay = c(0)
+)
+
+```
+
+```{r results='hide'}
+# Run combinations
+
+runs <- tuning_run("tune_train_test.R", flags = tp, runs_dir = "runs_tune_train_test", confirm = FALSE, echo = FALSE)
+
+```
+
+
+```{r}
+# Sort by val loss
+
+runs %>% 
+  arrange(eval_best_loss) %>% 
+  select(eval_best_loss,
+         eval_best_acc,
+         eval_best_epoch,
+         epochs_completed,
+         flag_batch_size,
+         flag_layers,
+         flag_units1,
+         flag_units2,
+         flag_learning_rate, 
+         flag_dropout, 
+         flag_weight_decay,)
+
+
+# pull out the best valid loss run:
+
+best_run_1 <- ls_runs(
+  runs_dir = "runs_tune_train_test",
+  order = eval_best_loss,
+  decreasing = FALSE
+) %>%
+  slice(1) %>%
+  pull(run_dir)
+
+
+# View best run
+
+view_run(best_run_1)
+
+# Clean up a bit:
+# save the best runs
+
+copy_run(best_run_1, to = "best_runs_tune_train_test")
+
+# archive the rest
+#clean_runs(runs = ls_runs(runs_dir = "runs_tune_train_test"),
+#           runs_dir = getOption("runs_tune_train_test", "runs_archive"),
+#           confirm = interactive())
+
+# clear the archive
+# purge_runs()
+
+
+
+```
+
+
+## K-fold cross validation
+
+Let's now test how the K-fold cross-validation procedure performs.
+
+```{r}
+# Declare the flags that I want to tune
+
+tp <- list(
+  units1 = c(128), 
+  units2 = c(128, 64, 32)
+)
+
+```
+
+
+```{r results='hide'}
+# Train a model with tfruns by using training_run()
+
+runs <- tuning_run("new_k_fold_cv.R", flags = tp, runs_dir = 'runs_cv_new')
+
+
+```
+
+```{r}
+# Sort by val loss
+runs %>% 
+  arrange(eval_best_loss) %>% 
+  select(eval_best_loss,
+         eval_best_acc,
+         eval_best_epoch,
+         epochs_completed,
+         flag_units1,
+         flag_units2)
+
+# Pull out the best valid loss run:
+
+best_run_2 <- runs %>% 
+  arrange(metric_val_loss) %>% 
+  slice(1) %>% 
+  pull(run_dir)
+
+# View best run
+view_run(best_run_2)
+
+# Clean up a bit:
+# save the best runs
+copy_run(best_run_2, to = "best_runs_cv")
+
+# archive the rest
+#clean_runs(runs = ls_runs(runs_dir = "runs_cv"),
+#           runs_dir = getOption("runs_cv", "runs_archive"),
+#           confirm = interactive())
+
+```
+
+I expected the k-fold procedure to work better due to the small data set (1152 observations), however, the hold out validation procedure proved to be better in terms of loss across all nine models. The best model provided by hold-out validation had a validation loss of 0.59 and had 128 units in layer 1 and 64 units in the last layers, while the best k-fold model had a loss of 0.647.
+
+Thus, I continue building models with the hold-out validation.
+
+# Tuning and optimization
+
+## Layers
+
+In order to find the optimal number of layers, I tested 28 different models using a combination of 1-7 layers and a combination of 32, 64, 128 and 256 neurons (7*4).
+
+```{r}
+tp <- list(
+  layers = c(1, 2, 3, 4, 5, 6, 7),
+  units = c(256, 128, 64, 32),
+  batch_size = c(50),
+  learning_rate = c(0.01),
+  dropout = c(0),
+  weight_decay = c(0)
+)
+
+```
+
+R will not evaluate the code in this notebook due to the runtime.
+```{r eval = FALSE}
+# Run combinations
+
+runs <- tuning_run("layers_tuning.R", flags = tp, runs_dir = "runs_tune_train_test", confirm = FALSE, echo = FALSE)
+```
+
+
+```{r eval = FALSE}
+# Sort by val loss
+
+runs %>% 
+  arrange(eval_best_loss) %>% 
+  select(eval_best_loss,
+         eval_best_acc,
+         eval_best_epoch,
+         epochs_completed,
+         flag_batch_size,
+         flag_layers,
+         flag_units, 
+         flag_learning_rate, 
+         flag_dropout, 
+         flag_weight_decay,)
+
+
+# pull out the best valid loss run:
+
+best_run_3 <- ls_runs(
+  runs_dir = "runs_tune_train_test",
+  order = eval_best_loss,
+  decreasing = FALSE
+  ) %>%
+  slice(1) %>%
+  pull(run_dir)
+
+
+# View best run
+
+view_run(best_run_3)
+
+# Clean up a bit:
+# save the best runs
+
+copy_run(best_run_3, to = "best_runs_tune_train_test")
+
+# archive the rest
+clean_runs(runs = ls_runs(runs_dir = "runs_tune_train_test"),
+           runs_dir = getOption("runs_tune_train_test", "runs_archive"),
+           confirm = interactive())
+
+# clear the archive
+# purge_runs()
+```
+
+The four best models had the same loss, however, the accuracy for the 6-layer model were significantly higher than the other models. Eg. the model with 6 hidden layers had a validation accuracy of 0.688 versus a 3-layer model with an accuracy of 0.628. Thus, we went for a model with 6 hidden layers.
+
+## Neurons
+
+### Testing number of neurons and tunnel/funnel
+
+To find the number of neurons in the layer, I started out by testing 49 different 6-layer models with combinations of 8, 16, 32, 64, 128, 256, and 512 neurons in the first layer and remaining layers, respectively. This was mainly for finding out how many neurons the first layer should contain and if the next layers should have a decreasing or constant number of neurons, thus a tunnel or funnel shape of neurons.
+
+```{r}
+tp <- list(
+  layers = c(6),
+  units1 = c(8,16,32,64,128,256,512),
+  units2 = c(8,16,32,64,128,256,512),
+  batch_size = c(50),
+  learning_rate = c(0.01),
+  dropout = c(0),
+  weight_decay = c(0)
+)
+
+```
+
+R will not evaluate the code in this notebook due to the runtime.
+```{r eval = FALSE}
+# Run combinations
+runs <- tuning_run("tune_train_test.R", flags = tp, runs_dir = "runs_tune_train_test", confirm = FALSE, echo = FALSE)
+
+# Sort by val loss
+
+runs %>% 
+  arrange(eval_best_loss) %>% 
+  select(eval_best_loss,
+         eval_best_acc,
+         eval_best_epoch,
+         epochs_completed,
+         flag_batch_size,
+         flag_layers,
+         flag_units1,
+         flag_units2,
+         flag_learning_rate, 
+         flag_dropout, 
+         flag_weight_decay,)
+
+# pull out the best valid loss run:
+
+best_run_4 <- ls_runs(
+  runs_dir = "runs_tune_train_test",
+  order = eval_best_loss,
+  decreasing = FALSE
+) %>%
+  slice(1) %>%
+  pull(run_dir)
+
+
+# View best run
+
+view_run(best_run_4)
+
+# Clean up a bit:
+# save the best runs
+
+copy_run(best_run_4, to = "best_runs_tune_train_test")
+
+# archive the rest
+clean_runs(runs = ls_runs(runs_dir = "runs_tune_train_test"),
+           runs_dir = getOption("runs_tune_train_test", "runs_archive"),
+           confirm = interactive())
+
+# clear the archive
+# purge_runs()
+
+```
+
+The best 5 models had a funnel shape, thus a decreasing number of units as dense layers are added. Also, the two best combinations were respectively 128 and 512 units in the first layer and 64 and 128 in the second, resulting in a validation loss of 0.575 and a 0.71 accuracy.
+
+### Testing specific number of neurons in each layer
+
+Thus, I moved on to test 486 different architectures with a decreasing number of neurons.
+
+```{r}
+tp <- list(
+  units1 = c(512, 256, 128),
+  units2 = c(256, 128, 64),
+  units3 = c(128, 64, 32),
+  units4 = c(32, 16, 8),
+  units5 = c(16, 8, 4),
+  units6 = c(8, 4),
+  batch_size = c(50),
+  learning_rate = c(0.01),
+  dropout = c(0),
+  weight_decay = c(0)
+)
+```
+
+R will not evaluate the code in this notebook due to the runtime.
+```{r eval=FALSE}
+# Run combinations
+
+runs <- tuning_run("tune_units_train_test.R", flags = tp, runs_dir = "runs_tune_train_test", confirm = FALSE, echo = FALSE)
+
+# Overview of best run
+# ls_runs(runs_dir = "runs_tune_train_test", order = eval_best_loss, decreasing = FALSE)
+
+
+# Sort by val loss
+
+runs %>% 
+  arrange(eval_best_loss) %>% 
+  select(eval_best_loss,
+         eval_best_acc,
+         eval_best_epoch,
+         epochs_completed,
+         flag_units1,
+         flag_units2,
+         flag_units3,
+         flag_units4,
+         flag_units5,
+         flag_units6,
+         flag_batch_size,
+         flag_learning_rate, 
+         flag_dropout, 
+         flag_weight_decay,)
+
+
+# pull out the best valid loss run:
+
+best_run_5 <- ls_runs(
+  runs_dir = "runs_tune_train_test",
+  order = eval_best_loss,
+  decreasing = FALSE
+) %>%
+  slice(1) %>%
+  pull(run_dir)
+
+
+# View best run
+
+view_run(best_run_5)
+
+# Clean up a bit:
+# save the best runs
+
+copy_run(best_run_5, to = "best_runs_tune_train_test")
+
+# archive the rest
+clean_runs(runs = ls_runs(runs_dir = "runs_tune_train_test"),
+           runs_dir = getOption("runs_tune_train_test", "runs_archive"),
+           confirm = interactive())
+
+# clear the archive
+# purge_runs()
+```
+
+The resulting best architecture was a 6-layer model with 256 neurons in layer 1, 128 in layer 2, 32 in layer 3, 16 in layer 4, 8 in layer 5, and 8 in layer 6. Also, this model seems to peak at epoch 3.
+
+## Batch size
+
+Now that the layers and units are found, I kept fine tuning batch size, learning rate, dropout layers and l2 regularization. I start by tuning the batch size.
+
+```{r}
+tp <- list(
+  units1 = 256,
+  units2 = 128,
+  units3 = 32,
+  units4 = 16,
+  units5 = 8,
+  units6 = 8,
+  batch_size = c(50, 64, 128, 256, 512),
+  learning_rate = 0.01,
+  dropout = 0,
+  weight_decay = 0
+)
+```
+
+R will not evaluate the code in this notebook due to the runtime.
+```{r eval=FALSE}
+# Run combinations
+
+runs <- tuning_run("tune_units_train_test.R", flags = tp, runs_dir = "runs_tune_train_test", confirm = FALSE, echo = FALSE)
+
+# Overview of best run
+# ls_runs(runs_dir = "runs_tune_train_test", order = eval_best_loss, decreasing = FALSE)
+
+
+# Sort by val loss
+
+runs %>% 
+  arrange(eval_best_loss) %>% 
+  select(eval_best_loss,
+         eval_best_acc,
+         eval_best_epoch,
+         epochs_completed,
+         flag_batch_size,
+         )
+
+
+# pull out the best valid loss run:
+
+best_run_6 <- ls_runs(
+  runs_dir = "runs_tune_train_test",
+  order = eval_best_loss,
+  decreasing = FALSE
+) %>%
+  slice(1) %>%
+  pull(run_dir)
+
+
+# View best run
+
+view_run(best_run_6)
+
+# Clean up a bit:
+# save the best runs
+
+copy_run(best_run_6, to = "best_runs_tune_train_test")
+
+# archive the rest
+clean_runs(runs = ls_runs(runs_dir = "runs_tune_train_test"),
+           runs_dir = getOption("runs_tune_train_test", "runs_archive"),
+           confirm = interactive())
+
+# clear the archive
+# purge_runs()
+```
+
+The optimal batch size was tested using five different sizes (50, 64, 128, 256 and 512) and the best is found out to be 50.
+
+## Learning rate
+
+We test for different values of learning rate:
+
+```{r}
+tp <- list(
+  units1 = 256,
+  units2 = 128,
+  units3 = 32,
+  units4 = 16,
+  units5 = 8,
+  units6 = 8,
+  batch_size = 50,
+  learning_rate = c(0.2, 0.15, 0.1, 0.01, 0.001, 0.0001),
+  dropout = 0,
+  weight_decay = 0
+)
+```
+
+R will not evaluate the code in this notebook due to the runtime.
+```{r eval=FALSE}
+# Run combinations
+
+runs <- tuning_run("tune_units_train_test.R", flags = tp, runs_dir = "runs_tune_train_test", confirm = FALSE, echo = FALSE)
+
+# Overview of best run
+# ls_runs(runs_dir = "runs_tune_train_test", order = eval_best_loss, decreasing = FALSE)
+
+
+# Sort by val loss
+
+runs %>% 
+  arrange(eval_best_loss) %>% 
+  select(eval_best_loss,
+         eval_best_acc,
+         eval_best_epoch,
+         epochs_completed,
+         flag_batch_size,
+         flag_learning_rate, 
+         flag_dropout, 
+         flag_weight_decay,)
+
+
+# pull out the best valid loss run:
+
+best_run_7 <- ls_runs(
+  runs_dir = "runs_tune_train_test",
+  order = eval_best_loss,
+  decreasing = FALSE
+) %>%
+  slice(1) %>%
+  pull(run_dir)
+
+
+# View best run
+
+view_run(best_run_7)
+
+# Clean up a bit:
+# save the best runs
+
+copy_run(best_run_7, to = "best_runs_tune_train_test")
+
+# archive the rest
+clean_runs(runs = ls_runs(runs_dir = "runs_tune_train_test"),
+           runs_dir = getOption("runs_tune_train_test", "runs_archive"),
+           confirm = interactive())
+
+# clear the archive
+# purge_runs()
+```
+
+The most optimal learning rate for the RMSprop furthermore turned out to be 0.01, after having tested six different values (0.2, 0.15, 0.1, 0.01, 0.001, 0.0001).
+
+## Dropout
+
+For further fine tuning and for mitigating overfitting, I chose to test regularization techniques such as l2 regularization and dropout layers. I start by testing 10 different dropout rates.
+
+```{r}
+tp <- list(
+  units1 = 256,
+  units2 = 128,
+  units3 = 32,
+  units4 = 16,
+  units5 = 8,
+  units6 = 8,
+  batch_size = 50,
+  learning_rate = 0.01,
+  dropout = c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9),
+  weight_decay = 0
+)
+```
+
+R will not evaluate the code in this notebook due to the runtime.
+```{r eval=FALSE}
+# Run combinations
+
+runs <- tuning_run("tune_units_train_test.R", flags = tp, runs_dir = "runs_tune_train_test", confirm = FALSE, echo = FALSE)
+
+# Overview of best run
+# ls_runs(runs_dir = "runs_tune_train_test", order = eval_best_loss, decreasing = FALSE)
+
+
+# Sort by val loss
+
+runs %>% 
+  arrange(eval_best_loss) %>% 
+  select(eval_best_loss,
+         eval_best_acc,
+         eval_best_epoch,
+         epochs_completed,
+         flag_batch_size,
+         flag_learning_rate, 
+         flag_dropout, 
+         flag_weight_decay,)
+
+
+# pull out the best valid loss run:
+
+best_run_8 <- ls_runs(
+  runs_dir = "runs_tune_train_test",
+  order = eval_best_loss,
+  decreasing = FALSE
+) %>%
+  slice(1) %>%
+  pull(run_dir)
+
+
+# View best run
+
+view_run(best_run_8)
+
+# Clean up a bit:
+# save the best runs
+
+copy_run(best_run_8, to = "best_runs_tune_train_test")
+
+# archive the rest
+clean_runs(runs = ls_runs(runs_dir = "runs_tune_train_test"),
+           runs_dir = getOption("runs_tune_train_test", "runs_archive"),
+           confirm = interactive())
+
+# clear the archive
+# purge_runs()
+```
+
+It turns out that the best model in terms of loss was a model using a dropout rate of 0.1.
+
+## l2 regularization
+
+For testing if l2 regularization also worked, I tested values with factors of 10-s, thus 0.1, 0.01, 0.001, and 0.0001. Those values constrain how much weight we allow the neural network to use. 
+
+```{r}
+tp <- list(
+  units1 = 256,
+  units2 = 128,
+  units3 = 32,
+  units4 = 16,
+  units5 = 8,
+  units6 = 8,
+  batch_size = 50,
+  learning_rate = 0.01,
+  dropout = 0,
+  weight_decay = c(0, 0.1, 0.01, 0.001, 0.0001)
+)
+```
+
+R will not evaluate the code in this notebook due to the runtime.
+```{r eval=FALSE}
+# Run combinations
+
+runs <- tuning_run("tune_units_train_test.R", flags = tp, runs_dir = "runs_tune_train_test", confirm = FALSE, echo = FALSE)
+
+# Overview of best run
+# ls_runs(runs_dir = "runs_tune_train_test", order = eval_best_loss, decreasing = FALSE)
+
+
+# Sort by val loss
+
+runs %>% 
+  arrange(eval_best_loss) %>% 
+  select(eval_best_loss,
+         eval_best_acc,
+         eval_best_epoch,
+         epochs_completed,
+         flag_batch_size,
+         flag_learning_rate, 
+         flag_dropout, 
+         flag_weight_decay,)
+
+
+# pull out the best valid loss run:
+
+best_run_9 <- ls_runs(
+  runs_dir = "runs_tune_train_test",
+  order = eval_best_loss,
+  decreasing = FALSE
+) %>%
+  slice(1) %>%
+  pull(run_dir)
+
+
+# View best run
+
+view_run(best_run_9)
+
+# Clean up a bit:
+# save the best runs
+
+copy_run(best_run_9, to = "best_runs_tune_train_test")
+
+# archive the rest
+clean_runs(runs = ls_runs(runs_dir = "runs_tune_train_test"),
+           runs_dir = getOption("runs_tune_train_test", "runs_archive"),
+           confirm = interactive())
+
+# clear the archive
+# purge_runs()
+```
+
+The best model was still the one without any regularization involved.
+
+I also compared the adam optimizer with the RMSprop, but the adam turned out to be considerably worse.
+
+# Final model
+
+Our final model peaks at epoch 3, has a validation loss of 0.57 and a validation accuracy of 0.71 and have the following network typology:
+
+-	Six dense layers and no dropout or normalization layers. Each layer has, in that order, 256, 128, 32, 16, 8, and 8 neurons.
+-	A batch size of 50 and a RMSprop as the optimizer using a learning rate of 0.01. Also, binary crossentropy is used as the loss function.
+-	A sigmoid output layer.
+-	ReLu was used as activation function.
+
+I run the final model on more time:
+
+```{r}
+# Data Preparation
+
+## Clean environment and load libraries
+
+rm(list = ls())
+options(scipen = 999)
+library(keras)
+library(tensorflow)
+set_random_seed(42)
+k_clear_session()
+
+## Load data, normalize and split
+
+
+fulldata <- read.csv(file = "C:/Users/kaspe/OneDrive - Aarhus Universitet/Skrivebord/BI/2. semester/Data science project/Data science project/modeling/Neural Network/Final_dataset.csv")
+
+
+# Subset wins
+
+win.df <- subset(fulldata, select = c("Winner","Winner_log"))
+
+
+# Subset factor variables and turn them into dummies
+
+library("fastDummies")
+dummy.df <- subset(fulldata, select = c("Region", "Tournament", "Round", "Team1", "Team2"))
+dummy.df <- dummy_cols(dummy.df, select_columns = c("Region", "Tournament", "Round", "Team1", "Team2"), remove_selected_columns = TRUE)
+
+
+# Extract training observations for calculating mean and sd used for scaling. Then subset numerical variables
+
+train.df <- subset(fulldata, subset = Tournament != "Worlds 2021 Main Event")
+
+# Calculate mean and std for the numeric variables
+mean <- apply(train.df[,10:ncol(train.df)], 2, mean)
+std <- apply(train.df[,10:ncol(train.df)], 2, sd)
+
+# Scale the whole dataset on train mean and train std
+numeric.df <- as.data.frame(scale(fulldata[,10:ncol(fulldata)], center = mean, scale = std))
+
+
+# Bind win.df, dummy.df and numeric.df together
+fulldata.scaled <- cbind(win.df, numeric.df, dummy.df)
+
+# Split into train and test
+
+train.df <- subset(fulldata.scaled, subset = Region_Worlds == 0)
+test.df <- subset(fulldata.scaled, subset = Region_Worlds == 1)
+# The data is now split between train and test properly
+
+# Create tensors
+
+library(dplyr)
+
+# x tensors
+
+x_train <- select(train.df, -c("Winner", "Winner_log", "Team1Gold", "Team2Gold", "Team1Barons", "Team2Barons", "Team1Turrets", "Team2Turrets",
+                               "Team1Kills", "Team2Kills"))
+x_train <- select(x_train, -ends_with(c("Gold", "DtC")))
+x_train <- as.matrix(x_train)
+
+x_test <- select(test.df, -c("Winner", "Winner_log", "Team1Gold", "Team2Gold", "Team1Barons", "Team2Barons", "Team1Turrets", "Team2Turrets",
+                             "Team1Kills", "Team2Kills"))
+x_test <- select(x_test, -ends_with(c("Gold", "DtC")))
+x_test <- as.matrix(x_test)
+
+# y tensors
+
+y_train <- as.array(train.df[,c("Winner_log")])
+y_test <- as.array(test.df[,c("Winner_log")])
+
+
+# Define convenience function:
+
+get_val_scores <- function(history){
+  
+  min_loss <-  min(history$metrics$val_loss) 
+  min_epoch <- which.min(history$metrics$val_loss)
+  min_acc <- history$metrics$val_accuracy[which.min(history$metrics$val_loss)]
+  
+  cat('Minimum validation loss:  ')
+  cat(min_loss)
+  cat('\n')
+  
+  cat('Loss minimized at epoch:  ')
+  cat(min_epoch)
+  cat('\n')
+  
+  cat('Validation accuracy:      ')
+  cat(min_acc)
+  cat('\n')
+  
+  return(list(min_loss = min_loss,
+              min_epoch = min_epoch,
+              min_acc = min_acc))
+  
+}
+
+
+# Hyperparameter flags 
+
+# set flags for hyperparameters of interest (default values in ())
+FLAGS <- flags(
+  flag_integer("units1", 256),
+  flag_integer("units2", 128),
+  flag_integer("units3", 32),
+  flag_integer("units4", 16),
+  flag_integer("units5", 8),
+  flag_integer("units6", 8),
+  flag_integer("batch_size", 50),
+  flag_numeric("learning_rate", 0.01),
+  flag_numeric("dropout", 0),
+  flag_numeric("weight_decay", 0)
+)
+
+# Define Model
+
+# Create a model with a single hidden input layer
+model <- keras_model_sequential() %>%
+  layer_dense(units = FLAGS$units1, activation = "relu", input_shape = ncol(x_train),
+              kernel_regularizer = regularizer_l2(l = FLAGS$weight_decay)) %>%
+  layer_dropout(rate = FLAGS$dropout) %>%
+  layer_dense(units = FLAGS$units2, activation = "relu",
+              kernel_regularizer = regularizer_l2(l = FLAGS$weight_decay)) %>%
+  layer_dropout(rate = FLAGS$dropout) %>%
+  layer_dense(units = FLAGS$units3, activation = "relu",
+              kernel_regularizer = regularizer_l2(l = FLAGS$weight_decay)) %>%
+  layer_dropout(rate = FLAGS$dropout) %>%
+  layer_dense(units = FLAGS$units4, activation = "relu",
+              kernel_regularizer = regularizer_l2(l = FLAGS$weight_decay)) %>%
+  layer_dropout(rate = FLAGS$dropout) %>%
+  layer_dense(units = FLAGS$units5, activation = "relu",
+              kernel_regularizer = regularizer_l2(l = FLAGS$weight_decay)) %>%
+  layer_dropout(rate = FLAGS$dropout) %>%
+  layer_dense(units = FLAGS$units6, activation = "relu",
+              kernel_regularizer = regularizer_l2(l = FLAGS$weight_decay)) %>%
+  layer_dropout(rate = FLAGS$dropout) %>%
+  layer_dense(units = 1, activation = "sigmoid") # Final output layer
+
+
+# Add compile step
+model %>% compile(
+  optimizer_rmsprop(FLAGS$learning_rate),
+  loss = "binary_crossentropy",
+  metrics = c("accuracy")
+)
+model
+# Train model
+history <- model %>% fit(
+  x_train,
+  y_train, 
+  epochs = 3,
+  batch_size = FLAGS$batch_size,
+  validation_split = 0.2,
+  verbose = 0,
+  callbacks = list(
+    callback_reduce_lr_on_plateau(patience = 2, factor = 0.1),
+    callback_early_stopping(patience = 20,
+                            restore_best_weights = TRUE,
+                            min_delta = 0.0001)
+  )
+)
+
+
+# Report minimum loss 
+
+# Evaluation measures and plot
+
+get_val_scores(history)
+
+plot(history)
+
+model %>% save_model_hdf5("traintestmodel")
+
+
+```
+
+
+## Run model on test data
+
+Run the final production model on the test data and print test loss and test accuracy.
+```{r}
+results <- model %>% evaluate(x_test, y_test)
+results
+```
+
+Now, generate the likelihood of games won by team 2 by using the predict method:
+```{r}
+model %>% predict(x_test)
+```
